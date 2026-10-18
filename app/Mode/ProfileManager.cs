@@ -1,0 +1,311 @@
+using System;
+using System.Drawing;
+using System.Threading.Tasks;
+using Microsoft.Win32;
+using PreySense.Gpu;
+using PreySense.Helpers;
+
+namespace PreySense.Mode
+{
+    /// <summary>
+    /// Manages per-mode performance profiles, loading/saving from registry
+    /// and applying hardware settings when modes are switched.
+    /// </summary>
+    public static class ProfileManager
+    {
+        private const string RegistryBase = @"SOFTWARE\PreySense\Profiles";
+        private static int _lastAppliedCoreOffset = 0;
+        private static int _lastAppliedMemoryOffset = 0;
+
+        /// <summary>
+        /// Maps a WMI power mode code to a registry-safe profile name.
+        /// </summary>
+        public static string ModeToProfileName(byte mode)
+        {
+            return mode switch
+            {
+                0x00 => "静音",
+                0x06 => "节能",
+                0x04 => "性能",
+                0x05 => "加速",
+                _ => "均衡"
+            };
+        }
+
+        /// <summary>
+        /// Loads a performance profile for the given mode from registry.
+        /// Returns default values if no saved profile exists.
+        /// </summary>
+        public static PerformanceProfile LoadProfile(byte mode)
+        {
+            var profile = PerformanceProfile.CreateDefault(mode);
+            string subKey = $@"{RegistryBase}\{ModeToProfileName(mode)}";
+
+            try
+            {
+                using var key = Registry.CurrentUser.OpenSubKey(subKey);
+                if (key == null) return profile;
+
+                profile.CpuPl1 = Math.Clamp((int)key.GetValue("CpuPl1", profile.CpuPl1), 5, 200);
+                profile.CpuPl2 = Math.Clamp((int)key.GetValue("CpuPl2", profile.CpuPl2), 5, 200);
+                profile.WindowsPowerMode = Math.Clamp((int)key.GetValue("WindowsPowerMode", profile.WindowsPowerMode), 0, 2);
+                profile.CpuBoost = Math.Clamp((int)key.GetValue("CpuBoost", profile.CpuBoost), 0, 6);
+
+                profile.GpuCoreOffset = Math.Clamp((int)key.GetValue("GpuCoreOffset", profile.GpuCoreOffset), -1000, 1000);
+                profile.GpuMemoryOffset = Math.Clamp((int)key.GetValue("GpuMemoryOffset", profile.GpuMemoryOffset), -1000, 3000);
+
+                profile.ApplyCpuLimits = (int)key.GetValue("ApplyCpuLimits", 0) == 1;
+                profile.ApplyGpuLimits = (int)key.GetValue("ApplyGpuLimits", 0) == 1;
+                profile.ApplyFanCurve = (int)key.GetValue("ApplyFanCurve", 0) == 1;
+                profile.FanRampUp = Math.Clamp((int)key.GetValue("FanRampUp", 1), 0, 5);
+            }
+            catch { }
+
+            return profile;
+        }
+
+        /// <summary>
+        /// Saves a performance profile for the given mode to registry.
+        /// </summary>
+        public static bool SaveProfile(PerformanceProfile profile)
+        {
+            string subKey = $@"{RegistryBase}\{ModeToProfileName(profile.PowerMode)}";
+
+            try
+            {
+                using var key = Registry.CurrentUser.CreateSubKey(subKey);
+                if (key == null)
+                {
+                    AppLogger.Log($"配置管理：创建注册表键 '{subKey}' 失败。");
+                    return false;
+                }
+
+                key.SetValue("CpuPl1", Math.Clamp(profile.CpuPl1, 5, 200));
+                key.SetValue("CpuPl2", Math.Clamp(profile.CpuPl2, 5, 200));
+                key.SetValue("WindowsPowerMode", profile.WindowsPowerMode);
+                key.SetValue("CpuBoost", profile.CpuBoost);
+
+                key.SetValue("GpuCoreOffset", profile.GpuCoreOffset);
+                key.SetValue("GpuMemoryOffset", profile.GpuMemoryOffset);
+
+                key.SetValue("ApplyCpuLimits", profile.ApplyCpuLimits ? 1 : 0);
+                key.SetValue("ApplyGpuLimits", profile.ApplyGpuLimits ? 1 : 0);
+                key.SetValue("ApplyFanCurve", profile.ApplyFanCurve ? 1 : 0);
+                key.SetValue("FanRampUp", profile.FanRampUp);
+                return true;
+            }
+            catch (Exception ex)
+            {
+                AppLogger.Log($"配置管理：保存配置 '{profile.Name}' 失败：{ex.Message}");
+                return false;
+            }
+        }
+
+        /// <summary>
+        /// Saves calibrated factory defaults separately from user-editable profile values.
+        /// </summary>
+        public static bool SaveFactoryDefaultProfile(PerformanceProfile profile)
+        {
+            string subKey = $@"{RegistryBase}\{ModeToProfileName(profile.PowerMode)}";
+
+            try
+            {
+                using var key = Registry.CurrentUser.CreateSubKey(subKey);
+                if (key == null)
+                {
+                    AppLogger.Log($"配置管理：为出厂默认创建注册表键 '{subKey}' 失败。");
+                    return false;
+                }
+
+                key.SetValue("DefaultCpuPl1", Math.Max(5, profile.CpuPl1));
+                key.SetValue("DefaultCpuPl2", Math.Max(5, profile.CpuPl2));
+                key.SetValue("DefaultWindowsPowerMode", Math.Clamp(profile.WindowsPowerMode, 0, 2));
+                key.SetValue("DefaultCpuBoost", Math.Clamp(profile.CpuBoost, 0, 6));
+                key.SetValue("DefaultGpuCoreOffset", profile.GpuCoreOffset);
+                key.SetValue("DefaultGpuMemoryOffset", profile.GpuMemoryOffset);
+                return true;
+            }
+            catch (Exception ex)
+            {
+                AppLogger.Log($"配置管理：保存 '{profile.Name}' 的出厂默认失败：{ex.Message}");
+                return false;
+            }
+        }
+
+        public static void ClearUserProfileValues(byte mode)
+        {
+            string subKey = $@"{RegistryBase}\{ModeToProfileName(mode)}";
+
+            try
+            {
+                using var key = Registry.CurrentUser.OpenSubKey(subKey, writable: true);
+                if (key == null)
+                    return;
+
+                 foreach (string valueName in new[]
+                {
+                    "CpuPl1",
+                    "CpuPl2",
+                    "WindowsPowerMode",
+                    "CpuBoost",
+                    "GpuCoreOffset",
+                    "GpuMemoryOffset",
+                    "ApplyCpuLimits",
+                    "ApplyGpuLimits",
+                    "ApplyFanCurve",
+                    "FanRampUp"
+                })
+                {
+                    TryDeleteValue(key, valueName);
+                }
+
+                for (int i = 0; i < 15; i++)
+                {
+                    TryDeleteValue(key, $"CpuCurve_{i}_Y");
+                    TryDeleteValue(key, $"GpuCurve_{i}_Y");
+                }
+            }
+            catch (Exception ex)
+            {
+                AppLogger.Log($"配置管理：清除模式 0x{mode:X2} 的用户配置失败：{ex.Message}");
+            }
+        }
+
+        private static void TryDeleteValue(RegistryKey key, string name)
+        {
+            try
+            {
+                if (key.GetValue(name) != null)
+                    key.DeleteValue(name);
+            }
+            catch { }
+        }
+
+        /// <summary>
+        /// Loads calibrated factory defaults for a mode. Falls back to compiled defaults
+        /// when calibration has not stored a value yet.
+        /// </summary>
+        public static PerformanceProfile LoadFactoryDefaultProfile(byte mode)
+        {
+            var profile = PerformanceProfile.CreateDefault(mode);
+            string subKey = $@"{RegistryBase}\{ModeToProfileName(mode)}";
+
+            try
+            {
+                using var key = Registry.CurrentUser.OpenSubKey(subKey);
+                if (key == null) return profile;
+
+                profile.CpuPl1 = Math.Max(5, (int)key.GetValue("DefaultCpuPl1", profile.CpuPl1));
+                profile.CpuPl2 = Math.Max(5, (int)key.GetValue("DefaultCpuPl2", profile.CpuPl2));
+                profile.WindowsPowerMode = Math.Clamp((int)key.GetValue("DefaultWindowsPowerMode", profile.WindowsPowerMode), 0, 2);
+                profile.CpuBoost = Math.Clamp((int)key.GetValue("DefaultCpuBoost", profile.CpuBoost), 0, 6);
+            }
+            catch { }
+
+            var gpuDefaults = PerformanceProfile.GetDefaultGpuOffsets(mode);
+            profile.GpuCoreOffset = Math.Clamp(gpuDefaults.coreOffset, -1000, 1000);
+            profile.GpuMemoryOffset = Math.Clamp(gpuDefaults.memoryOffset, -1000, 3000);
+
+            profile.ApplyCpuLimits = false;
+            profile.ApplyGpuLimits = false;
+            profile.ApplyFanCurve = false;
+            return profile;
+        }
+
+        /// <summary>
+        /// Applies the hardware settings from a profile, respecting the per-category apply flags.
+        /// Only applies settings where the corresponding checkbox was enabled.
+        /// </summary>
+        public static async Task ApplyProfileAsync(string modeName, WmiController? wmi = null)
+        {
+            byte mode = modeName switch
+            {
+                "静音" => 0x00,
+                "节能" => 0x06,
+                "性能" => 0x04,
+                "加速" => 0x05,
+                _ => 0x01
+            };
+
+            var profile = LoadProfile(mode);
+            await ApplyProfileAsync(profile, wmi);
+        }
+
+        /// <summary>
+        /// Applies the hardware settings from a profile, respecting the per-category apply flags.
+        /// Only applies settings where the corresponding checkbox was enabled.
+        /// </summary>
+        public static async Task ApplyProfileAsync(PerformanceProfile profile, WmiController? wmi = null)
+        {
+            AppLogger.Log($"配置管理：正在应用配置 '{profile.Name}'（模式 0x{profile.PowerMode:X2}）");
+            var factoryDefaults = LoadFactoryDefaultProfile(profile.PowerMode);
+            bool cpuLimitsDifferFromFactory =
+                profile.CpuPl1 != factoryDefaults.CpuPl1 ||
+                profile.CpuPl2 != factoryDefaults.CpuPl2;
+
+            // Wait three seconds before applying power limit changes to stop EC from immediately overwriting them
+            if ((profile.ApplyCpuLimits && cpuLimitsDifferFromFactory) || profile.ApplyGpuLimits)
+            {
+                await Task.Delay(2500);
+            }
+
+            // Apply CPU power limits (only if the user has opted in)
+            if (profile.ApplyCpuLimits && cpuLimitsDifferFromFactory)
+            {
+                AppLogger.Log($"配置管理：CPU PL1={profile.CpuPl1}W，PL2={profile.CpuPl2}W");
+                PowerLimitController.SetCpuPowerLimits(
+                    profile.CpuPl1,
+                    profile.CpuPl2);
+            }
+
+            // Apply CPU boost mode
+            PowerLimitController.SetCpuBoost(profile.CpuBoost);
+
+            // Apply GPU offsets only when the profile explicitly enables them and they differ from last applied.
+            if (profile.ApplyGpuLimits && IsDiscreteGpuAvailableForOverclock())
+            {
+                if (profile.GpuCoreOffset != _lastAppliedCoreOffset || profile.GpuMemoryOffset != _lastAppliedMemoryOffset)
+                {
+                    AppLogger.Log($"ProfileManager: applying NVAPI GPU offsets for profile '{profile.Name}' (core={profile.GpuCoreOffset:+#;-#;0}MHz, memory={profile.GpuMemoryOffset:+#;-#;0}MHz).");
+                    NvidiaWrapper.ApplyGpuSettings(profile.GpuCoreOffset, profile.GpuMemoryOffset);
+                    _lastAppliedCoreOffset = profile.GpuCoreOffset;
+                    _lastAppliedMemoryOffset = profile.GpuMemoryOffset;
+                }
+                else
+                {
+                    AppLogger.Log($"配置管理：配置 '{profile.Name}' 的偏移未变化，跳过 NVAPI 显卡偏移。");
+                }
+            }
+            else if (IsDiscreteGpuAvailableForOverclock() && (_lastAppliedCoreOffset != 0 || _lastAppliedMemoryOffset != 0))
+            {
+                // Reset to stock if overclocking is disabled for the new profile but was active previously
+                AppLogger.Log($"配置管理：配置 '{profile.Name}' 已禁用超频，正在将显卡偏移重置为默认（0/0）。");
+                NvidiaWrapper.ApplyGpuSettings(0, 0);
+                _lastAppliedCoreOffset = 0;
+                _lastAppliedMemoryOffset = 0;
+            }
+            else if (profile.ApplyGpuLimits)
+            {
+                AppLogger.Log($"配置管理：配置 '{profile.Name}' 的 GPU 模式为仅核显，跳过 NVAPI 显卡偏移。");
+            }
+
+            // Fan curve is applied by the main form's telemetry timer if enabled —
+            // we just need to signal whether it should be active for this mode.
+            // The SettingsForm.ToggleCustomFans() handles this.
+        }
+
+        private static bool IsDiscreteGpuAvailableForOverclock()
+        {
+            try
+            {
+                using var key = Registry.CurrentUser.OpenSubKey(@"SOFTWARE\PreySense");
+                int gpuMode = key != null ? (int)key.GetValue("GPUMode", 1)! : 1;
+                return gpuMode != 0;
+            }
+            catch
+            {
+                return true;
+            }
+        }
+    }
+}
