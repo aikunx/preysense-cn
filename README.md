@@ -37,7 +37,7 @@ PreySense 是一个第三方工具，用来替代宏碁 Predator 笔记本自带
 
 ### 一、安装
 
-1. 下载 [Releases](https://github.com/aikunx/preysense-zh/releases) 里的 `PreySense.exe`
+1. 下载 [Releases](https://github.com/aikunx/preysense-cn/releases/latest) 里的 `PreySense.exe`
 2. **右键 → 以管理员身份运行**（必须，否则读不到硬件）
 3. 完成
 
