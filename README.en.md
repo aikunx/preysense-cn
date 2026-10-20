@@ -122,3 +122,7 @@ dotnet publish app\PreySense.csproj -c Release -r win-x64 `
 Based on [PreySense](https://github.com/hammadzaigham/PreySense) (GPL v3); this edition is also GPL v3.
 
 Original author: hammadzaigham. Localization and slimming guide by this project's author.
+
+---
+
+[![](https://img.shields.io/badge/powered_by-dsh-4D6BFE?style=flat-square&logo=deepseek&logoColor=white)](https://github.com/deepseek-ai/deepseek-harness)
