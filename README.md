@@ -1,7 +1,7 @@
 # 掠夺者控制台（PreySense 中文版）
 
 [![](https://img.shields.io/badge/powered_by-dsh-4D6BFE?style=flat-square&logo=deepseek&logoColor=white)](https://github.com/deepseek-ai/deepseek-harness)
-![platform Windows](https://img.shields.io/badge/platform-Windows-0078D6?style=flat-square&logo=windows&logoColor=white) ![C# WinForms](https://img.shields.io/badge/C%23-WinForms-239120?style=flat-square&logo=csharp&logoColor=white) ![.NET 10](https://img.shields.io/badge/.NET-10-512BD4?style=flat-square&logo=dotnet&logoColor=white) ![RAM 902 MB → 129 MB](https://img.shields.io/badge/RAM-902_MB_→_129_MB-brightgreen?style=flat-square) ![locale zh-CN](https://img.shields.io/badge/locale-zh--CN-grey?style=flat-square)
+![platform Windows](https://img.shields.io/badge/platform-Windows-0078D6?style=flat-square&logo=windows&logoColor=white) ![C# WinForms](https://img.shields.io/badge/C%23-WinForms-239120?style=flat-square&logo=csharp&logoColor=white) ![.NET 10](https://img.shields.io/badge/.NET-10-512BD4?style=flat-square&logo=dotnet&logoColor=white) ![RAM 902 MB → 129 MB](https://img.shields.io/badge/RAM-902_MB_%E2%86%92_129_MB-brightgreen?style=flat-square) ![locale zh-CN](https://img.shields.io/badge/locale-zh--CN-grey?style=flat-square)
 
 [**简体中文**](README.md) | [English](README.en.md)
 
