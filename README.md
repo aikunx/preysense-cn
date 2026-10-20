@@ -1,5 +1,7 @@
 # 掠夺者控制台（PreySense 中文版）
 
+[![](https://img.shields.io/badge/powered_by-dsh-4D6BFE?style=flat-square&logo=deepseek&logoColor=white)](https://github.com/deepseek-ai/deepseek-harness)
+
 [**简体中文**](README.md) | [English](README.en.md)
 
 ---
@@ -311,7 +313,3 @@ A：有。设太高会过热降频，设太低会卡。建议从默认值小幅�
 <p align="center">
   <i>留驱动，换掉壳 · 内存省 85% 而功能不减</i>
 </p>
-
----
-
-[![](https://img.shields.io/badge/powered_by-dsh-4D6BFE?style=flat-square&logo=deepseek&logoColor=white)](https://github.com/deepseek-ai/deepseek-harness)
